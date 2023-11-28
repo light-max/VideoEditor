@@ -2,10 +2,7 @@ package com.lifengqiang.videoeditor.ui.mediaselector
 
 import android.annotation.SuppressLint
 import android.os.Bundle
-import android.util.DisplayMetrics
 import android.view.View
-import android.widget.ImageView
-import android.widget.Toast
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -16,11 +13,16 @@ import com.lifengqiang.videoeditor.base.SimpleSingleItemRecyclerAdapter
 import com.lifengqiang.videoeditor.base.SimpleSingleItemRecyclerAdapter.OnItemClickListener
 import com.lifengqiang.videoeditor.databinding.ActivityMediaSelectorBinding
 import com.lifengqiang.videoeditor.model.IMediaSelectorModel
+import com.lifengqiang.videoeditor.ui.mediaselector.preview.PreviewAudioPopupWindow
+import com.lifengqiang.videoeditor.ui.mediaselector.preview.PreviewPicturePopupWindow
+import com.lifengqiang.videoeditor.ui.mediaselector.preview.PreviewVideoPopupWindow
+import com.lifengqiang.videoeditor.utils.timeTranslateMMSS
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 
 const val MEDIA_SELECT_FLAG = "select_flag"
+const val MEDIA_SELECT_RESULT_KEY = "result_key"
 
 const val MEDIA_SELECT_AUDIO = 0x1
 const val MEDIA_SELECT_VIDEO = 0x2
@@ -43,8 +45,15 @@ class MediaSelectorActivity : BaseActivity<MediaSelectorPresenter, ActivityMedia
                     )
                 )
                 recycler.layoutManager = LinearLayoutManager(this@MediaSelectorActivity)
+                confirm.visibility = View.GONE
             } else {
                 recycler.layoutManager = GridLayoutManager(this@MediaSelectorActivity, 4)
+                confirm.visibility = View.VISIBLE
+                confirm.setOnClickListener {
+                    val adapter = recycler.adapter as ImageListAdapter
+                    val fileList = adapter.selected.map { it.media.path }
+                    presenter.returnSelectResult(fileList)
+                }
             }
         }
         presenter.queryMedia(mediaType)
@@ -67,7 +76,7 @@ class MediaSelectorActivity : BaseActivity<MediaSelectorPresenter, ActivityMedia
                 .apply { setOnItemClickListener(this@MediaSelectorActivity) }
         } else if (viewType == IMediaSelectorView.MediaViewType.MEDIA_COVER) {
             val list = group.list.map { ImageListAdapter.MediaDataWrapper(it) }
-            binding.recycler.adapter = ImageListAdapter(getImageWidth(), list)
+            binding.recycler.adapter = ImageListAdapter(list)
                 .apply {
                     setOnItemClickListener { data, position ->
                         onClick(
@@ -75,21 +84,29 @@ class MediaSelectorActivity : BaseActivity<MediaSelectorPresenter, ActivityMedia
                             position
                         )
                     }
+                    onItemChangedListener = { number ->
+                        binding.confirm.isEnabled = number > 0
+                    }
                 }
         }
     }
 
     override fun onClick(data: IMediaSelectorModel.MediaData, position: Int) {
-        Toast.makeText(this, "${data.type} ${data.path}", Toast.LENGTH_SHORT).show()
-        if (data.type == IMediaSelectorModel.MediaType.AUDIO) {
+        when (data.type) {
+            IMediaSelectorModel.MediaType.AUDIO ->
+                PreviewAudioPopupWindow(this)
+                    .setAudioMedia(data) { media ->
+                        presenter.returnSelectResult(listOf(media.path))
+                    }.showAsView(binding.root)
 
+            IMediaSelectorModel.MediaType.PICTURE ->
+                PreviewPicturePopupWindow(this, data.path)
+                    .showAsView(binding.root)
+
+            IMediaSelectorModel.MediaType.VIDEO ->
+                PreviewVideoPopupWindow(this, data.path)
+                    .showAsView(binding.root)
         }
-    }
-
-    private fun getImageWidth(): Int {
-        val outMetrics = DisplayMetrics()
-        windowManager.defaultDisplay.getMetrics(outMetrics)
-        return outMetrics.widthPixels / 4
     }
 
     /**
@@ -106,14 +123,7 @@ class MediaSelectorActivity : BaseActivity<MediaSelectorPresenter, ActivityMedia
         ) {
             val file = File(data.path)
             holder.setText(R.id.name, file.name)
-                .setText(
-                    R.id.duration,
-                    String.format(
-                        "时长: %02d:%02d",
-                        data.duration / 1000 / 60,
-                        data.duration / 1000 % 60
-                    )
-                )
+                .setText(R.id.duration, timeTranslateMMSS(data.duration / 1000))
                 .setText(R.id.time, "创建日期: ${dateFormat.format(Date(data.modified))}")
                 .setText(R.id.path, data.path)
         }
@@ -126,14 +136,15 @@ class MediaSelectorActivity : BaseActivity<MediaSelectorPresenter, ActivityMedia
     /**
      * 视频或图片的列表适配器
      */
-    private class ImageListAdapter(val imageWidth: Int, list: List<MediaDataWrapper>) :
+    private class ImageListAdapter(list: List<MediaDataWrapper>) :
         SimpleSingleItemRecyclerAdapter<ImageListAdapter.MediaDataWrapper>(list) {
         data class MediaDataWrapper(
             val media: IMediaSelectorModel.MediaData,
             var check: Boolean = false
         )
 
-        private val selected = mutableListOf<MediaDataWrapper>()
+        val selected = mutableListOf<MediaDataWrapper>()
+        var onItemChangedListener: (Int) -> Unit = {}
 
         override fun onBindViewHolder(
             holder: ViewHolder,
@@ -141,22 +152,17 @@ class MediaSelectorActivity : BaseActivity<MediaSelectorPresenter, ActivityMedia
             position: Int
         ) {
             holder.getImage(R.id.image).apply {
-                setImageSize(this)
                 Glide.with(holder.itemView)
                     .asBitmap()
                     .load(File(wrapper.media.path))
-                    .override(imageWidth / 2)
+                    .override(128)
                     .centerCrop()
                     .into(this)
             }
             holder.getText(R.id.duration).apply {
                 if (wrapper.media.type == IMediaSelectorModel.MediaType.VIDEO) {
                     visibility = View.VISIBLE
-                    text = String.format(
-                        "%02d:%02d",
-                        wrapper.media.duration / 1000 / 60,
-                        wrapper.media.duration / 1000 % 60
-                    )
+                    text = timeTranslateMMSS(wrapper.media.duration / 1000)
                 } else {
                     visibility = View.GONE
                 }
@@ -176,6 +182,7 @@ class MediaSelectorActivity : BaseActivity<MediaSelectorPresenter, ActivityMedia
                         }
                     }
                 }
+                onItemChangedListener(selected.size)
                 setSelectView(holder, wrapper)
             }
             setSelectView(holder, wrapper)
@@ -191,13 +198,6 @@ class MediaSelectorActivity : BaseActivity<MediaSelectorPresenter, ActivityMedia
             } else {
                 text.visibility = View.GONE
             }
-        }
-
-        private fun setImageSize(image: ImageView) {
-            val params = image.layoutParams
-            params.width = imageWidth
-            params.height = imageWidth
-            image.layoutParams = params
         }
 
         override fun getItemViewLayout(): Int {

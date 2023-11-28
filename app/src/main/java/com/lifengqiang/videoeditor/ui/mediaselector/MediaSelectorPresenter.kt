@@ -1,5 +1,7 @@
 package com.lifengqiang.videoeditor.ui.mediaselector
 
+import android.app.Activity
+import android.content.Intent
 import com.lifengqiang.videoeditor.base.BasePresenter
 import com.lifengqiang.videoeditor.model.IMediaSelectorModel
 import com.lifengqiang.videoeditor.model.MediaSelectorModel
@@ -58,5 +60,15 @@ class MediaSelectorPresenter : BasePresenter<MediaSelectorModel, IMediaSelectorV
 
     fun showMediaGroup() {
         view()?.showMediaGroups(mediaGroups)
+    }
+
+    fun returnSelectResult(list: List<String>) {
+        view()?.activity()?.apply {
+            val intent = Intent().apply {
+                putStringArrayListExtra(MEDIA_SELECT_RESULT_KEY, ArrayList(list))
+            }
+            setResult(Activity.RESULT_OK, intent)
+            finish()
+        }
     }
 }
