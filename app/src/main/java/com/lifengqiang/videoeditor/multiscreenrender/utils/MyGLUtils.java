@@ -1,4 +1,4 @@
-package com.lifengqiang.videoeditor.mulitscreenrender.utils;
+package com.lifengqiang.videoeditor.multiscreenrender.utils;
 
 import android.opengl.GLES30;
 

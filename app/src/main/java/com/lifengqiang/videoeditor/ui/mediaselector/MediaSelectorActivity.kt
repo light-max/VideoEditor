@@ -11,6 +11,7 @@ import com.lifengqiang.videoeditor.R
 import com.lifengqiang.videoeditor.base.BaseActivity
 import com.lifengqiang.videoeditor.base.SimpleSingleItemRecyclerAdapter
 import com.lifengqiang.videoeditor.base.SimpleSingleItemRecyclerAdapter.OnItemClickListener
+import com.lifengqiang.videoeditor.data.MediaSelectorResult
 import com.lifengqiang.videoeditor.databinding.ActivityMediaSelectorBinding
 import com.lifengqiang.videoeditor.model.IMediaSelectorModel
 import com.lifengqiang.videoeditor.ui.mediaselector.preview.PreviewAudioPopupWindow
@@ -51,7 +52,13 @@ class MediaSelectorActivity : BaseActivity<MediaSelectorPresenter, ActivityMedia
                 confirm.visibility = View.VISIBLE
                 confirm.setOnClickListener {
                     val adapter = recycler.adapter as ImageListAdapter
-                    val fileList = adapter.selected.map { it.media.path }
+                    val fileList = adapter.selected.map {
+                        if (it.media.type == IMediaSelectorModel.MediaType.PICTURE) {
+                            MediaSelectorResult(it.media.path, 0)
+                        } else {
+                            MediaSelectorResult(it.media.path, 2)
+                        }
+                    }
                     presenter.returnSelectResult(fileList)
                 }
             }
@@ -96,7 +103,7 @@ class MediaSelectorActivity : BaseActivity<MediaSelectorPresenter, ActivityMedia
             IMediaSelectorModel.MediaType.AUDIO ->
                 PreviewAudioPopupWindow(this)
                     .setAudioMedia(data) { media ->
-                        presenter.returnSelectResult(listOf(media.path))
+                        presenter.returnSelectResult(listOf(MediaSelectorResult(media.path, 1)))
                     }.showAsView(binding.root)
 
             IMediaSelectorModel.MediaType.PICTURE ->

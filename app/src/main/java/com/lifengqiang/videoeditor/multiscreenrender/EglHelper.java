@@ -1,8 +1,12 @@
-package com.lifengqiang.videoeditor.mulitscreenrender;
+package com.lifengqiang.videoeditor.multiscreenrender;
 
 import android.opengl.EGLExt;
 import android.util.Log;
+import android.util.Pair;
 import android.view.Surface;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.microedition.khronos.egl.EGL10;
 import javax.microedition.khronos.egl.EGLConfig;
@@ -12,6 +16,7 @@ import javax.microedition.khronos.egl.EGLSurface;
 
 public class EglHelper {
     private static final String TAG = "MSREGLHelper";
+
     private EGL10 mEgl;
     private EGLDisplay mDisplay = null;
     private EGLContext mContext = null;
@@ -55,7 +60,7 @@ public class EglHelper {
         int[] ctxAttr = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL10.EGL_NONE};
         mContext = mEgl.eglCreateContext(mDisplay, eglConfigs[0], EGL10.EGL_NO_CONTEXT, ctxAttr);
         if (mContext == null) {
-            Log.e(TAG, "egl context create fail error: 0x" + Integer.toHexString(mEgl.eglGetError()));
+            Log.e(TAG, "egl context create fail error: 0x%x" + Integer.toHexString(mEgl.eglGetError()));
             return false;
         }
 
@@ -74,7 +79,7 @@ public class EglHelper {
         return mOESSurface;
     }
 
-    public EGLSurface attatchSurface(Surface surface) {
+    public EGLSurface attachSurface(Surface surface) {
         EGLSurface eglSurface = mEgl.eglCreateWindowSurface(mDisplay, mConfig, surface, null);
         if (eglSurface != null) {
             return eglSurface;

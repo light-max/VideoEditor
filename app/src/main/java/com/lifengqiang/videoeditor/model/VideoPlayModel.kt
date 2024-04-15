@@ -454,7 +454,10 @@ private fun newVideoThread(
                 durationSecond = (getLong(MediaFormat.KEY_DURATION) / 1000000L).toInt()
                 videoWidth = getInteger(MediaFormat.KEY_WIDTH)
                 videoHeight = getInteger(MediaFormat.KEY_HEIGHT)
-                videoRotation = getInteger(MediaFormat.KEY_ROTATION)
+                videoRotation =
+                    if (containsKey(MediaFormat.KEY_ROTATION))
+                        getInteger(MediaFormat.KEY_ROTATION)
+                    else 0
             }
         }
         codec = MediaCodec.createDecoderByType(mime!!).apply {

@@ -1,33 +1,36 @@
-package com.lifengqiang.videoeditor.mulitscreenrender.renderer;
+package com.lifengqiang.videoeditor.multiscreenrender.renderer;
 
 import android.graphics.SurfaceTexture;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES30;
+import android.opengl.Matrix;
 import android.os.Build;
 import android.util.Log;
 import android.view.Surface;
 
-import com.lifengqiang.videoeditor.mulitscreenrender.utils.DefaultTextureInputSourceRenderer;
-
-import java.util.Objects;
+import com.lifengqiang.videoeditor.multiscreenrender.utils.DefaultTextureInputSourceRenderer;
+import com.lifengqiang.videoeditor.multiscreenrender.utils.TextureCoordinateUtils;
 
 public class GLTextureInputSourceHolder {
-    private static final String TAG = GLTextureInputSourceHolder.class.getSimpleName();
+    private static final String TAG = GLTextureInputSourceHolder.class.getName();
     private Surface mSurface;
     private SurfaceTexture mSurfaceTexture;
     private SurfaceTexture.OnFrameAvailableListener mFrameAvailableListener;
-    private final float[] mTransformMatrix = new float[16];
+    private final float[] mTextureTransformMatrix = new float[]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,};
+    private final float[] mVertexTransformMatrix = new float[]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,};
     private int mSurfaceWidth = 0, mSurfaceHeight = 0;
     private boolean mSurfaceSizeChanged = false;
-    private Renderer mRenderer = new DefaultTextureInputSourceRenderer();
+    private Renderer mRenderer;
+    private OnOutputTextureSizeChangedListener mOutputSizeChangedListener;
+
     private int mFrameBufferId = 0;
     private int mOESInputTextureId = 0;
     private int mRGBAOutputTextureId = 0;
     private int mOutputTextureWidth = 0;
     private int mOutputTextureHeight = 0;
+    private int mScreenRotation = 0;
 
     public GLTextureInputSourceHolder(SurfaceTexture.OnFrameAvailableListener listener) {
-        Objects.requireNonNull(listener);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             mSurfaceTexture = new SurfaceTexture(false);
             mSurface = new Surface(mSurfaceTexture);
@@ -35,6 +38,7 @@ public class GLTextureInputSourceHolder {
         } else {
             this.mFrameAvailableListener = listener;
         }
+        mRenderer = new DefaultTextureInputSourceRenderer();
     }
 
     public void performSurfaceCreated() {
@@ -42,17 +46,68 @@ public class GLTextureInputSourceHolder {
         mRenderer.onCreated();
     }
 
-    public void performSurfaceSizeChanged(int width, int height, boolean isInvertAspectRatio) {
+    public void performSurfaceSizeChanged(int width, int height) {
         this.mSurfaceWidth = width;
         this.mSurfaceHeight = height;
-        if (isInvertAspectRatio) {
-            this.mOutputTextureWidth = height;
-            this.mOutputTextureHeight = width;
-        } else {
-            this.mOutputTextureWidth = width;
-            this.mOutputTextureHeight = height;
-        }
         this.mSurfaceSizeChanged = true;
+        mRenderer.onSurfaceSizeChanged(mSurfaceWidth, mSurfaceHeight);
+        tryingChangeOutputTextureSize();
+    }
+
+    public void performScreenRotationChanged(int screenRotation) {
+        this.mScreenRotation = screenRotation;
+        Matrix.setRotateM(mVertexTransformMatrix, 0, mScreenRotation, 0, 0, -1);
+        tryingChangeOutputTextureSize();
+    }
+
+    /**
+     * EGL.eglMakeCurrent(display, egl_surface)
+     * {@link #bindFrameBuffer()}
+     * {@link #performSurfaceDraw()}
+     * EGL.eglSwapBuffers(display, egl_surface)
+     * {@link #unbindFrameBuffer()}
+     */
+    public void performSurfaceDraw() {
+        if (isSurfaceSizeChanged()) {
+            GLES30.glViewport(0, 0, mOutputTextureWidth, mOutputTextureHeight);
+            mSurfaceTexture.updateTexImage();
+            mSurfaceTexture.getTransformMatrix(mTextureTransformMatrix);
+            tryingChangeOutputTextureSize();
+            mRenderer.onDrawFrame(mVertexTransformMatrix, mOESInputTextureId, mTextureTransformMatrix);
+        } else {
+            Log.w(TAG, "输入大小未设定");
+        }
+    }
+
+    public void setNewRenderer(Renderer renderer) {
+        if (mRenderer != null) {
+            mRenderer.onRecycle();
+        }
+        renderer.onCreated();
+        if (isSurfaceSizeChanged()) {
+            renderer.onSurfaceSizeChanged(mSurfaceWidth, mSurfaceHeight);
+            renderer.onOutputTextureSizeChanged(mOutputTextureWidth, mOutputTextureHeight);
+        }
+        mRenderer = renderer;
+    }
+
+    private void tryingChangeOutputTextureSize() {
+        boolean isInvertAspectRatioFromTexture = TextureCoordinateUtils.isInvertAspectRatio(mTextureTransformMatrix);
+        boolean isInvertAspectRatioFromScreen = mScreenRotation % 180 != 0;
+        if (isInvertAspectRatioFromTexture != isInvertAspectRatioFromScreen) {
+            if (!(mOutputTextureWidth == mSurfaceHeight && mOutputTextureHeight == mSurfaceWidth)) {
+                setOutputTextureSize(mSurfaceHeight, mSurfaceWidth);
+            }
+        } else {
+            if (!(mOutputTextureWidth == mSurfaceWidth && mOutputTextureHeight == mSurfaceHeight)) {
+                setOutputTextureSize(mSurfaceWidth, mSurfaceHeight);
+            }
+        }
+    }
+
+    private void setOutputTextureSize(int width, int height) {
+        this.mOutputTextureWidth = width;
+        this.mOutputTextureHeight = height;
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, mFrameBufferId);
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, mRGBAOutputTextureId);
         GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA,
@@ -60,28 +115,8 @@ public class GLTextureInputSourceHolder {
                 GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null);
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, GLES30.GL_NONE);
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, GLES30.GL_NONE);
-        mRenderer.onSurfaceSizeChanged(width, height);
-    }
-
-    public void performSurfaceDraw() {
-        if (isSurfaceSizeChanged()) {
-            GLES30.glViewport(0, 0, mSurfaceWidth, mSurfaceHeight);
-            mSurfaceTexture.updateTexImage();
-            mSurfaceTexture.getTransformMatrix(mTransformMatrix);
-            mRenderer.onDrawFrame(mOESInputTextureId, mTransformMatrix);
-        } else {
-            Log.w(TAG, "输入大小未设定");
-        }
-    }
-
-    public void setNewRenderer(Renderer renderer) {
-        if (mSurface != null) {
-            mRenderer.onRecycle();
-        }
-        renderer.onCreated();
-        if (isSurfaceSizeChanged()) {
-            renderer.onSurfaceSizeChanged(mSurfaceWidth, mSurfaceHeight);
-        }
+        mRenderer.onOutputTextureSizeChanged(width, height);
+        mOutputSizeChangedListener.onOutputTextureSizeChanged(width, height);
     }
 
     private void generateGLObject() {
@@ -99,8 +134,8 @@ public class GLTextureInputSourceHolder {
         // 输出的rgba纹理
         mRGBAOutputTextureId = ids[1];
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, mRGBAOutputTextureId);
-        GLES30.glTexParameterf(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST);
-        GLES30.glTexParameterf(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR);
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR);
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR);
         GLES30.glTexParameterf(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_REPEAT);
         GLES30.glTexParameterf(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_REPEAT);
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, GLES30.GL_NONE);
@@ -174,6 +209,14 @@ public class GLTextureInputSourceHolder {
         return mRGBAOutputTextureId;
     }
 
+    public void setOutputTextureSizeChangedListener(OnOutputTextureSizeChangedListener listener) {
+        this.mOutputSizeChangedListener = listener;
+    }
+
+    public interface OnOutputTextureSizeChangedListener {
+        void onOutputTextureSizeChanged(int width, int height);
+    }
+
     public interface Renderer {
         void onCreated();
 
@@ -181,6 +224,8 @@ public class GLTextureInputSourceHolder {
 
         void onSurfaceSizeChanged(int width, int height);
 
-        void onDrawFrame(int texName, float[] transformMatrix);
+        void onOutputTextureSizeChanged(int width, int height);
+
+        void onDrawFrame(float[] vertexTransformMatrix, int texName, float[] textureTransformMatrix);
     }
 }

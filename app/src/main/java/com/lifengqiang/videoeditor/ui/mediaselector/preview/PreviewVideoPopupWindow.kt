@@ -14,14 +14,14 @@ import com.lifengqiang.videoeditor.base.FullScreenPopupWindow
 import com.lifengqiang.videoeditor.databinding.DialogMediaSelectorPreviewVideoBinding
 import com.lifengqiang.videoeditor.model.IVideoPlayModel
 import com.lifengqiang.videoeditor.model.VideoPlayModel
-import com.lifengqiang.videoeditor.mulitscreenrender.MulitSurfaceRenderer
+import com.lifengqiang.videoeditor.multiscreenrender.MultiSurfaceRenderer
 import com.lifengqiang.videoeditor.utils.timeTranslateMMSS
 
 class PreviewVideoPopupWindow(activity: Activity, val path: String) :
     FullScreenPopupWindow<DialogMediaSelectorPreviewVideoBinding>(activity),
     IVideoPlayModel.Callback {
     private val handler = Handler(Looper.getMainLooper())
-    private val renderer = MulitSurfaceRenderer()
+    private val renderer = MultiSurfaceRenderer()
     private val player: IVideoPlayModel = VideoPlayModel(path)
 
     init {
@@ -86,7 +86,7 @@ class PreviewVideoPopupWindow(activity: Activity, val path: String) :
     }
 
     override fun onPrepared(durationSecond: Int, videoWidth: Int, videoHeight: Int, rotation: Int) {
-        renderer.setInputSurfaceSize(videoWidth, videoHeight, rotation % 180 != 0)
+        renderer.setInputSurfaceSize(videoWidth, videoHeight)
         handler.post {
             binding.apply {
                 durationText.text = timeTranslateMMSS(durationSecond)

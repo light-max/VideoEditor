@@ -1,7 +1,8 @@
-package com.lifengqiang.videoeditor.mulitscreenrender;
+package com.lifengqiang.videoeditor.multiscreenrender;
 
 import android.graphics.SurfaceTexture;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
 import android.util.AndroidRuntimeException;
@@ -10,16 +11,16 @@ import android.view.Surface;
 
 import androidx.annotation.NonNull;
 
-import com.lifengqiang.videoeditor.mulitscreenrender.renderer.GLTextureInputSourceHolder;
-import com.lifengqiang.videoeditor.mulitscreenrender.renderer.GLTextureRendererHolder;
+import com.lifengqiang.videoeditor.multiscreenrender.renderer.GLTextureInputSourceHolder;
+import com.lifengqiang.videoeditor.multiscreenrender.renderer.GLTextureRendererHolder;
 
 import java.util.HashMap;
 import java.util.Map;
 
 import javax.microedition.khronos.egl.EGLSurface;
 
-public class RendererThread extends Thread implements Handler.Callback {
-    private static final String TAG = RendererThread.class.getSimpleName();
+public class RendererThread extends Thread implements Handler.Callback, GLTextureInputSourceHolder.OnOutputTextureSizeChangedListener {
+    private static final String TAG = "RendererThread";
     /*** 输入纹理大小发生改变 */
     public static final int INPUT_SIZE_CHANGED = 0;
     /*** 把目标surface添加到渲染输出列表 */
@@ -34,6 +35,8 @@ public class RendererThread extends Thread implements Handler.Callback {
     public static final int INPUT_RENDERER_CHANGED = 5;
     /*** 设置输出目标surface的渲染器 */
     public static final int OUTPUT_SURFACE_RENDERER_CHANGED = 6;
+    /*** 屏幕旋转角度发生了改变 */
+    public static final int SCREEN_ROTATION_CHANGED = 7;
 
     private Looper mLooper = null;
     private Handler mHandler = null;
@@ -42,17 +45,27 @@ public class RendererThread extends Thread implements Handler.Callback {
     private final GLTextureInputSourceHolder mInput;
     private final Map<Surface, GLTextureRendererHolder> mRenderers;
 
-    public RendererThread() {
+    private GLTextureInputSourceHolder.OnOutputTextureSizeChangedListener mOutputTextureSizeChangedListener = null;
+
+    public RendererThread(boolean isAutoRender) {
         super(TAG);
         mEgl = new EglHelper();
         mRenderers = new HashMap<>();
-        mInput = new GLTextureInputSourceHolder(st -> {
-            if (mHandler != null) {
-                mHandler.sendEmptyMessage(NOTIFY_RENDER);
-            }
-        });
+        if (isAutoRender) {
+            mInput = new GLTextureInputSourceHolder(st -> {
+                if (mHandler != null) {
+                    mHandler.sendEmptyMessage(NOTIFY_RENDER);
+                }
+            });
+        } else {
+            mInput = new GLTextureInputSourceHolder(null);
+        }
+        mInput.setOutputTextureSizeChangedListener(this);
     }
 
+    /**
+     * @see HandlerThread#run()
+     */
     @Override
     public void run() {
         Looper.prepare();
@@ -69,29 +82,39 @@ public class RendererThread extends Thread implements Handler.Callback {
         mInput.performSurfaceCreated();
         Looper.loop();
         mEgl.destroyEGL();
-        mLooper = null;
-        mHandler = null;
-        Log.i(TAG, "exit");
+    }
+
+    @Override
+    public void onOutputTextureSizeChanged(int width, int height) {
+        if (Thread.currentThread() != this)
+            throw new RuntimeException("必须在GL线程中调用");
+        for (GLTextureRendererHolder renderer : mRenderers.values()) {
+            renderer.performInputTextureSizeChanged(
+                    mInput.getOutputTextureWidth(),
+                    mInput.getOutputTextureHeight()
+            );
+        }
+        Log.i(TAG, "OutputTextureSizeChanged: " + width + "x" + height);
+        if (mOutputTextureSizeChangedListener != null) {
+            mOutputTextureSizeChangedListener.onOutputTextureSizeChanged(width, height);
+        }
     }
 
     @Override
     public boolean handleMessage(@NonNull Message msg) {
         switch (msg.what) {
             case INPUT_SIZE_CHANGED: {
-                InputSurfaceParamsData data = (InputSurfaceParamsData) msg.obj;
-                mInput.performSurfaceSizeChanged(data.width, data.height, data.invertAspectRatio);
-                for (GLTextureRendererHolder renderer : mRenderers.values()) {
-                    renderer.performSurfaeSizeChanged(
-                            mInput.getOutputTextureWidth(),
-                            mInput.getOutputTextureHeight()
-                    );
-                }
-                Log.i(TAG, "New InputSize: " + data.width + "," + data.height);
+                Log.i(TAG, "New InputSize: " + msg.arg1 + "," + msg.arg2);
+                mInput.performSurfaceSizeChanged(msg.arg1, msg.arg2);
                 break;
             }
             case INPUT_RENDERER_CHANGED:
                 mInput.setNewRenderer((GLTextureInputSourceHolder.Renderer) msg.obj);
                 Log.i(TAG, "New InputRenderer: " + msg.obj);
+                break;
+            case SCREEN_ROTATION_CHANGED:
+                mInput.performScreenRotationChanged(msg.arg1);
+                Log.i(TAG, "ScreenRotation Changed: " + msg.arg1);
                 break;
             case OUTPUT_SURFACE_ATTACH: {
                 SurfaceParamsData data = (SurfaceParamsData) msg.obj;
@@ -99,7 +122,7 @@ public class RendererThread extends Thread implements Handler.Callback {
                 if (mRenderers.containsKey(surface)) {
                     Log.w(TAG, "表面: " + surface + "连接了两次");
                 } else {
-                    EGLSurface eglSurface = mEgl.attatchSurface(surface);
+                    EGLSurface eglSurface = mEgl.attachSurface(surface);
                     if (eglSurface != null) {
                         GLTextureRendererHolder renderer;
                         if (data.renderer != null) {
@@ -131,7 +154,7 @@ public class RendererThread extends Thread implements Handler.Callback {
                 SurfaceParamsData data = (SurfaceParamsData) msg.obj;
                 GLTextureRendererHolder renderer = mRenderers.get(data.surface);
                 if (renderer != null) {
-                    renderer.performSurfaeSizeChanged(data.width, data.height);
+                    renderer.performSurfaceSizeChanged(data.width, data.height);
                     if (mInput.isSurfaceSizeChanged()) {
                         renderer.performInputTextureSizeChanged(
                                 mInput.getOutputTextureWidth(),
@@ -167,8 +190,7 @@ public class RendererThread extends Thread implements Handler.Callback {
                         renderer.performGLTextureDraw(
                                 mInput.getRGBAOutputTextureId(),
                                 mInput.getOutputTextureWidth(),
-                                mInput.getOutputTextureHeight()
-                        );
+                                mInput.getOutputTextureHeight());
                         mEgl.swipeBuffers(renderer.getEglSurface());
                     }
                 }
@@ -177,6 +199,9 @@ public class RendererThread extends Thread implements Handler.Callback {
         return true;
     }
 
+    /**
+     * @see HandlerThread#getLooper()
+     */
     public Looper getLooper() {
         if (!isAlive()) return null;
         boolean wasInterrupted = false;
@@ -214,8 +239,12 @@ public class RendererThread extends Thread implements Handler.Callback {
         return mRenderers.get(surface);
     }
 
+    public void setOutputTextureSizeChangedListener(GLTextureInputSourceHolder.OnOutputTextureSizeChangedListener listener) {
+        this.mOutputTextureSizeChangedListener = listener;
+    }
+
     public static class SurfaceParamsData {
-        public Surface surface;
+        public Surface surface = null;
         public GLTextureRendererHolder.Renderer renderer = null;
         public int width, height;
 
@@ -232,17 +261,6 @@ public class RendererThread extends Thread implements Handler.Callback {
             this.surface = surface;
             this.width = width;
             this.height = height;
-        }
-    }
-
-    public static class InputSurfaceParamsData {
-        public int width, height;
-        public boolean invertAspectRatio;
-
-        public InputSurfaceParamsData(int width, int height, boolean invertAspectRatio) {
-            this.width = width;
-            this.height = height;
-            this.invertAspectRatio = invertAspectRatio;
         }
     }
 }

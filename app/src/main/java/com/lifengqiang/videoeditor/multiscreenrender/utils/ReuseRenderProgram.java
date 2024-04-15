@@ -1,4 +1,4 @@
-package com.lifengqiang.videoeditor.mulitscreenrender.utils;
+package com.lifengqiang.videoeditor.multiscreenrender.utils;
 
 import android.opengl.GLES30;
 
@@ -6,6 +6,7 @@ public class ReuseRenderProgram {
     private int counter = 0;
     public int id = 0;
     public int texture_vbo = 0;
+
     private final int[] shader = new int[2];
 
     public void create() {
@@ -44,11 +45,10 @@ public class ReuseRenderProgram {
             "layout(location = 1) in vec2 tCoord;\n" +
             "layout(location = 0) uniform mat4 uMatrix;\n" +
             "out vec2 texCoord;\n" +
-            "void main(){" +
-            "   gl_Position = uMatrix * vec4(vCoord, 0., 1.);\n" +
-            "   texCoord = tCoord;\n" +
+            "void main() {\n" +
+            "    gl_Position = uMatrix * vec4(vCoord, 0., 1.);\n" +
+            "    texCoord = tCoord;\n" +
             "}";
-
     public static String FRAGMENT_SHADER = "#version 300 es\n" +
             "#extension GL_OES_EGL_image_external_essl3 : require\n" +
             "precision mediump float;\n" +
@@ -56,7 +56,7 @@ public class ReuseRenderProgram {
             "out vec4 fragment;\n" +
             "uniform sampler2D sTexture;\n" +
             "void main(){\n" +
-            "   fragment = texture(sTexture, texCoord);\n" +
+            "    fragment = texture(sTexture, texCoord);\n" +
             "}";
 
     private final static ThreadLocal<ReuseRenderProgram> threadLocal = new ThreadLocal<>();

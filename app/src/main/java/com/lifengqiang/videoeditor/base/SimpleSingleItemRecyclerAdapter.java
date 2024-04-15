@@ -70,6 +70,8 @@ public abstract class SimpleSingleItemRecyclerAdapter<T> extends RecyclerView.Ad
                 holder.itemView.setOnClickListener(v -> {
                     onItemClickListener.onClick(data.get(dataIndex), dataIndex);
                 });
+            }
+            if (onItemLongClickListener != null) {
                 holder.itemView.setOnLongClickListener(v -> {
                     onItemLongClickListener.onLongClick(data.get(dataIndex), dataIndex);
                     return true;

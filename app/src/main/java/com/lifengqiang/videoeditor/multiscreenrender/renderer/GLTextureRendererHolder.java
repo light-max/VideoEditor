@@ -1,15 +1,15 @@
-package com.lifengqiang.videoeditor.mulitscreenrender.renderer;
+package com.lifengqiang.videoeditor.multiscreenrender.renderer;
 
 import android.opengl.GLES30;
 import android.util.Log;
 import android.view.Surface;
 
-import com.lifengqiang.videoeditor.mulitscreenrender.utils.DefaultTextureOutputRenderer;
+import com.lifengqiang.videoeditor.multiscreenrender.utils.DefaultTextureOutputRenderer;
 
 import javax.microedition.khronos.egl.EGLSurface;
 
 public class GLTextureRendererHolder {
-    private static final String TAG = GLTextureRendererHolder.class.getSimpleName();
+    private static final String TAG = GLTextureRendererHolder.class.getName();
     private final Surface mSurface;
     private final EGLSurface mEglSurface;
     private int mSurfaceWidth = 1;
@@ -19,10 +19,13 @@ public class GLTextureRendererHolder {
     private int mInputTextureHeight = 1;
     private boolean mInputTextureSizeChanged = false;
     private boolean mRemove = false;
+
     private Renderer mRenderer;
 
     public GLTextureRendererHolder(Surface surface, EGLSurface eglSurface) {
-        this(surface, eglSurface, new DefaultTextureOutputRenderer());
+        this.mSurface = surface;
+        this.mEglSurface = eglSurface;
+        mRenderer = new DefaultTextureOutputRenderer();
     }
 
     public GLTextureRendererHolder(Surface surface, EGLSurface eglSurface, Renderer renderer) {
@@ -39,7 +42,7 @@ public class GLTextureRendererHolder {
         mRenderer.onRecycle();
     }
 
-    public void performSurfaeSizeChanged(int width, int height) {
+    public void performSurfaceSizeChanged(int width, int height) {
         this.mSurfaceWidth = width;
         this.mSurfaceHeight = height;
         this.mSurfaceSizeChanged = true;
@@ -55,11 +58,11 @@ public class GLTextureRendererHolder {
 
     public void performGLTextureDraw(int texName, int texWidth, int texHeight) {
         if (isRemove()) return;
-        if (!isSurfaceSizeChanged()) {
+        if (!mSurfaceSizeChanged) {
             Log.w(TAG, "表面大小未设置");
             return;
         }
-        if (!isInputTextureSizeChanged()) {
+        if (!mInputTextureSizeChanged) {
             Log.w(TAG, "输入纹理大小未设置");
             return;
         }

@@ -1,12 +1,14 @@
-package com.lifengqiang.videoeditor.mulitscreenrender.utils;
+package com.lifengqiang.videoeditor.multiscreenrender.utils;
 
+import android.opengl.GLES20;
 import android.opengl.GLES30;
 import android.opengl.Matrix;
 
-import com.lifengqiang.videoeditor.mulitscreenrender.renderer.GLTextureRendererHolder;
+import com.lifengqiang.videoeditor.multiscreenrender.renderer.GLTextureRendererHolder;
 
 public class DefaultTextureOutputRenderer implements GLTextureRendererHolder.Renderer {
     private final ReuseRenderProgram program = ReuseRenderProgram.getProgram();
+
     private int vertex_vbo = 0;
     private int viewport_width, viewport_height, texture_width, texture_height;
     private float[] matrix = new float[]{
@@ -91,6 +93,7 @@ public class DefaultTextureOutputRenderer implements GLTextureRendererHolder.Ren
                 0, 0, 0,
                 0, 1, 0);
         Matrix.multiplyMM(matrix, 0, projection, 0, view, 0);
+
         MyGLUtils.setVBO(vertex_vbo, vertex);
     }
 
@@ -101,9 +104,9 @@ public class DefaultTextureOutputRenderer implements GLTextureRendererHolder.Ren
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texName);
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vertex_vbo);
         GLES30.glUniformMatrix4fv(0, 1, false, matrix, 0);
-        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 8, 0);
+        GLES30.glVertexAttribPointer(0, 2, GLES20.GL_FLOAT, false, 8, 0);
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, program.texture_vbo);
-        GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 8, 0);
+        GLES30.glVertexAttribPointer(1, 2, GLES20.GL_FLOAT, false, 8, 0);
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4);
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, GLES30.GL_NONE);
     }
